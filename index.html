@@ -11,8 +11,15 @@
   />
 
   <style>
+    #info {
+      padding: 10px;
+      font-size: 16px;
+      background: #f0f0f0;
+      font-family: sans-serif;
+    }
+
     #map {
-      height: 100vh;
+      height: calc(100vh - 50px);
       width: 100%;
     }
   </style>
@@ -20,6 +27,7 @@
 
 <body>
 
+<div id="info">Loading...</div>
 <div id="map"></div>
 
 <!-- Leaflet JS -->
@@ -27,8 +35,8 @@
 
 <script>
 
-const channelID = "3260394";
-const readAPIKey = "KVGFCQ2EKLAWPI3H";
+const channelID = "xx";
+const readAPIKey = "xx";
 
 async function initMap() {
 
@@ -38,8 +46,24 @@ async function initMap() {
   const response = await fetch(url);
   const data = await response.json();
 
-  const lat = parseFloat(data.feeds[0].field1);
-  const lng = parseFloat(data.feeds[0].field2);
+  const feed = data.feeds[0];
+
+  const lat = parseFloat(feed.field1);
+  const lng = parseFloat(feed.field2);
+
+  // ThingSpeakの送信時刻（UTC）
+  const timestamp = feed.created_at;
+
+  // JSTへ変換
+  const jstTime = new Date(timestamp).toLocaleString('ja-JP', {
+    timeZone: 'Asia/Tokyo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
 
   // 地図生成
   const map = L.map('map').setView([lat, lng], 17);
@@ -51,8 +75,19 @@ async function initMap() {
 
   // マーカー
   L.marker([lat, lng]).addTo(map)
-    .bindPopup("Current Location")
+    .bindPopup(`
+      <b>Current Location</b><br>
+      Latitude: ${lat}<br>
+      Longitude: ${lng}<br>
+      Updated: ${jstTime}
+    `)
     .openPopup();
+
+  // ページ上部に表示
+  document.getElementById("info").innerHTML = `
+    📍 GPS Location Updated Time:<br>
+    ${jstTime}
+  `;
 }
 
 initMap();
