@@ -2,9 +2,8 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>GPS test pages (Leaflet)</title>
+  <title>GPS Live Tracking (15s update)</title>
 
-  <!-- Leaflet CSS -->
   <link
     rel="stylesheet"
     href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
@@ -30,7 +29,6 @@
 <div id="info">Loading...</div>
 <div id="map"></div>
 
-<!-- Leaflet JS -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
@@ -38,59 +36,85 @@
 const channelID = "3260394";
 const readAPIKey = "KVGFCQ2EKLAWPI3H";
 
-async function initMap() {
+let map;
+let marker;
+let lastTimestamp = "";
 
-  const url =
-    `https://api.thingspeak.com/channels/${channelID}/feeds.json?api_key=${readAPIKey}&results=1`;
+// 地図初期化（最初は仮位置）
+map = L.map('map').setView([35.0, 139.0], 5);
 
-  const response = await fetch(url);
-  const data = await response.json();
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '&copy; OpenStreetMap contributors'
+}).addTo(map);
 
-  const feed = data.feeds[0];
+// データ取得・更新
+async function updateData() {
 
-  const lat = parseFloat(feed.field1);
-  const lng = parseFloat(feed.field2);
+  try {
+    const url =
+      `https://api.thingspeak.com/channels/${channelID}/feeds.json?api_key=${readAPIKey}&results=1`;
 
-  // ThingSpeakの送信時刻（UTC）
-  const timestamp = feed.created_at;
+    const response = await fetch(url);
+    const data = await response.json();
 
-  // JSTへ変換
-  const jstTime = new Date(timestamp).toLocaleString('ja-JP', {
-    timeZone: 'Asia/Tokyo',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit'
-  });
+    const feed = data.feeds[0];
 
-  // 地図生成
-  const map = L.map('map').setView([lat, lng], 17);
+    // 同じデータなら更新しない
+    if (feed.created_at === lastTimestamp) {
+      return;
+    }
+    lastTimestamp = feed.created_at;
 
-  // OpenStreetMapタイル
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; OpenStreetMap contributors'
-  }).addTo(map);
+    const lat = parseFloat(feed.field1);
+    const lng = parseFloat(feed.field2);
 
-  // マーカー
-  L.marker([lat, lng]).addTo(map)
-    .bindPopup(`
-      <b>Current Location</b><br>
+    // JST変換
+    const jstTime = new Date(feed.created_at).toLocaleString('ja-JP', {
+      timeZone: 'Asia/Tokyo',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+
+    // マーカー更新
+    if (marker) {
+      map.removeLayer(marker);
+    }
+
+    marker = L.marker([lat, lng]).addTo(map)
+      .bindPopup(`
+        <b>Current Location</b><br>
+        Latitude: ${lat}<br>
+        Longitude: ${lng}<br>
+        Updated: ${jstTime}
+      `);
+
+    // 自動追従
+    map.setView([lat, lng], 17);
+
+    // 表示更新
+    document.getElementById("info").innerHTML = `
+      📍 Latest GPS Data<br>
       Latitude: ${lat}<br>
       Longitude: ${lng}<br>
-      Updated: ${jstTime}
-    `)
-    .openPopup();
+      Time: ${jstTime}
+    `;
 
-  // ページ上部に表示
-  document.getElementById("info").innerHTML = `
-    📍 GPS Location Updated Time:<br>
-    ${jstTime}
-  `;
+  } catch (err) {
+    console.error("Update error:", err);
+    document.getElementById("info").innerHTML =
+      "⚠️ Data fetch error (ThingSpeak)";
+  }
 }
 
-initMap();
+// 初回実行
+updateData();
+
+// 15秒ごと更新（ThingSpeak推奨）
+setInterval(updateData, 15000);
 
 </script>
 
