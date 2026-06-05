@@ -1,118 +1,268 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="utf-8">
-  <title>GPS Live Tracking (15s update + Bear Icon)</title>
+<meta charset="utf-8">
+<title>Bear GPS Tracker</title>
 
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-  />
+<link
+  rel="stylesheet"
+  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+/>
 
-  <style>
-    #info {
-      padding: 10px;
-      font-size: 16px;
-      background: #f0f0f0;
-      font-family: sans-serif;
-    }
+<style>
+  body{
+    margin:0;
+    padding:0;
+  }
 
-    #map {
-      height: calc(100vh - 50px);
-      width: 100%;
-    }
-  </style>
+  #info{
+    padding:10px;
+    font-size:16px;
+    background:#f0f0f0;
+    font-family:sans-serif;
+  }
+
+  #controls{
+    padding:10px;
+    background:#ffffff;
+    border-bottom:1px solid #ccc;
+  }
+
+  button{
+    padding:8px 16px;
+    font-size:15px;
+    cursor:pointer;
+  }
+
+  #map{
+    height:calc(100vh - 120px);
+    width:100%;
+  }
+</style>
 </head>
 
 <body>
 
-<div id="info">Loading...</div>
+<div id="info">
+  Loading...
+</div>
+
+<div id="controls">
+  <button onclick="resetMarkers()">
+    マーカーリセット
+  </button>
+</div>
+
 <div id="map"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
 
-const channelID = "3260394";
-const readAPIKey = "KVGFCQ2EKLAWPI3H";
+// ===== ThingSpeak =====
+const channelID = "xx";
+const readAPIKey = "xx";
 
+// ===== 地図 =====
 let map;
-let marker;
+let markers = [];
+let polyline = null;
+
+// 最後に取得したデータ時刻
 let lastTimestamp = "";
 
-// 🗺 地図初期化
-map = L.map('map').setView([35.0, 139.0], 5);
+// リセット時刻
+let resetTime = null;
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  attribution: '&copy; OpenStreetMap contributors'
-}).addTo(map);
+// ===== 地図初期化 =====
+map = L.map('map').setView([35.0,139.0],5);
 
-// 🐻 カスタムアイコン（重要）
+L.tileLayer(
+  'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+  {
+    attribution:'&copy; OpenStreetMap contributors'
+  }
+).addTo(map);
+
+// ===== クマアイコン =====
 const bearIcon = L.icon({
-  iconUrl: 'bearIcon.png',   // ← 同じフォルダに置く
-  iconSize: [50, 50],        // 表示サイズ
-  iconAnchor: [25, 50],      // 地図上の位置（足元を基準）
-  popupAnchor: [0, -45]      // ポップアップ位置
+  iconUrl:'bearIcon.png',
+  iconSize:[50,50],
+  iconAnchor:[25,50],
+  popupAnchor:[0,-45]
 });
 
-// 📡 データ更新関数
-async function updateData() {
+// ===== リセット =====
+function resetMarkers(){
 
-  try {
+  resetTime = new Date();
+
+  markers.forEach(marker=>{
+    map.removeLayer(marker);
+  });
+
+  markers = [];
+
+  if(polyline){
+    map.removeLayer(polyline);
+    polyline = null;
+  }
+
+  document.getElementById("info").innerHTML =
+    "🐻 リセット完了。新しいGPS送信待ち";
+}
+
+// ===== 更新処理 =====
+async function updateData(){
+
+  try{
+
     const url =
-      `https://api.thingspeak.com/channels/${channelID}/feeds.json?api_key=${readAPIKey}&results=1`;
+      `https://api.thingspeak.com/channels/${channelID}/feeds.json?api_key=${readAPIKey}&results=20`;
 
     const response = await fetch(url);
     const data = await response.json();
 
-    const feed = data.feeds[0];
+    let feeds = data.feeds;
 
-    // 同じデータならスキップ
-    if (feed.created_at === lastTimestamp) {
+    // リセット後のみ表示
+    if(resetTime){
+
+      feeds = feeds.filter(feed =>
+        new Date(feed.created_at) > resetTime
+      );
+    }
+
+    if(feeds.length === 0){
       return;
     }
-    lastTimestamp = feed.created_at;
 
-    const lat = parseFloat(feed.field1);
-    const lng = parseFloat(feed.field2);
+    const newestFeed = feeds[feeds.length-1];
 
-    // JST変換
-    const jstTime = new Date(feed.created_at).toLocaleString('ja-JP', {
-      timeZone: 'Asia/Tokyo',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit'
-    });
-
-    // 🧭 マーカー更新（bearIcon適用）
-    if (marker) {
-      map.removeLayer(marker);
+    // 同じデータなら更新しない
+    if(newestFeed.created_at === lastTimestamp){
+      return;
     }
 
-    marker = L.marker([lat, lng], { icon: bearIcon }).addTo(map)
+    lastTimestamp = newestFeed.created_at;
+
+    // 最新3件
+    const latestFeeds = feeds.slice(-3);
+
+    // 古いマーカー削除
+    markers.forEach(marker=>{
+      map.removeLayer(marker);
+    });
+
+    markers = [];
+
+    if(polyline){
+      map.removeLayer(polyline);
+      polyline = null;
+    }
+
+    const path = [];
+
+    latestFeeds.forEach((feed,index)=>{
+
+      const lat = parseFloat(feed.field1);
+      const lng = parseFloat(feed.field2);
+
+      if(isNaN(lat) || isNaN(lng)){
+        return;
+      }
+
+      path.push([lat,lng]);
+
+      const jstTime =
+        new Date(feed.created_at).toLocaleString(
+          'ja-JP',
+          {
+            timeZone:'Asia/Tokyo',
+            year:'numeric',
+            month:'2-digit',
+            day:'2-digit',
+            hour:'2-digit',
+            minute:'2-digit',
+            second:'2-digit'
+          }
+        );
+
+      const marker = L.marker(
+        [lat,lng],
+        {icon:bearIcon}
+      )
+      .addTo(map)
       .bindPopup(`
-        <b>🐻 Bear Location</b><br>
+        <b>🐻 Location ${index+1}</b><br>
         Latitude: ${lat}<br>
         Longitude: ${lng}<br>
-        Updated: ${jstTime}
-      `);
+        Time: ${jstTime}
+      `)
+      .bindTooltip(
+        `${index+1}`,
+        {
+          permanent:true,
+          direction:'top',
+          offset:[0,-40]
+        }
+      );
 
-    // 自動追従
-    map.setView([lat, lng], 17);
+      markers.push(marker);
 
-    // 上部表示
-    document.getElementById("info").innerHTML = `
-      🐻 Bear GPS Tracker<br>
-      Latitude: ${lat}<br>
-      Longitude: ${lng}<br>
-      Time: ${jstTime}
-    `;
+    });
 
-  } catch (err) {
+    // 軌跡表示
+    if(path.length >= 2){
+
+      polyline = L.polyline(
+        path,
+        {
+          weight:4
+        }
+      ).addTo(map);
+
+    }
+
+    // 最新位置
+    const latestPoint = path[path.length-1];
+
+    if(latestPoint){
+
+      map.setView(latestPoint,17);
+
+      const latestFeedData =
+        latestFeeds[latestFeeds.length-1];
+
+      const latestTime =
+        new Date(
+          latestFeedData.created_at
+        ).toLocaleString(
+          'ja-JP',
+          {
+            timeZone:'Asia/Tokyo',
+            year:'numeric',
+            month:'2-digit',
+            day:'2-digit',
+            hour:'2-digit',
+            minute:'2-digit',
+            second:'2-digit'
+          }
+        );
+
+      document.getElementById("info").innerHTML = `
+        🐻 Bear GPS Tracker<br>
+        最新位置：${latestPoint[0]}, ${latestPoint[1]}<br>
+        更新時刻：${latestTime}<br>
+        表示中：最新3地点
+      `;
+    }
+
+  }
+  catch(err){
+
     console.error(err);
+
     document.getElementById("info").innerHTML =
       "⚠️ Data fetch error (ThingSpeak)";
   }
@@ -121,8 +271,8 @@ async function updateData() {
 // 初回実行
 updateData();
 
-// 15秒更新
-setInterval(updateData, 15000);
+// 15秒ごと更新
+setInterval(updateData,15000);
 
 </script>
 
