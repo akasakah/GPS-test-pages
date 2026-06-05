@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>GPS Live Tracking (15s update)</title>
+  <title>GPS Live Tracking (15s update + Bear Icon)</title>
 
   <link
     rel="stylesheet"
@@ -40,14 +40,22 @@ let map;
 let marker;
 let lastTimestamp = "";
 
-// 地図初期化（最初は仮位置）
+// 🗺 地図初期化
 map = L.map('map').setView([35.0, 139.0], 5);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '&copy; OpenStreetMap contributors'
 }).addTo(map);
 
-// データ取得・更新
+// 🐻 カスタムアイコン（重要）
+const bearIcon = L.icon({
+  iconUrl: 'bearIcon.png',   // ← 同じフォルダに置く
+  iconSize: [50, 50],        // 表示サイズ
+  iconAnchor: [25, 50],      // 地図上の位置（足元を基準）
+  popupAnchor: [0, -45]      // ポップアップ位置
+});
+
+// 📡 データ更新関数
 async function updateData() {
 
   try {
@@ -59,7 +67,7 @@ async function updateData() {
 
     const feed = data.feeds[0];
 
-    // 同じデータなら更新しない
+    // 同じデータならスキップ
     if (feed.created_at === lastTimestamp) {
       return;
     }
@@ -79,14 +87,14 @@ async function updateData() {
       second: '2-digit'
     });
 
-    // マーカー更新
+    // 🧭 マーカー更新（bearIcon適用）
     if (marker) {
       map.removeLayer(marker);
     }
 
-    marker = L.marker([lat, lng]).addTo(map)
+    marker = L.marker([lat, lng], { icon: bearIcon }).addTo(map)
       .bindPopup(`
-        <b>Current Location</b><br>
+        <b>🐻 Bear Location</b><br>
         Latitude: ${lat}<br>
         Longitude: ${lng}<br>
         Updated: ${jstTime}
@@ -95,16 +103,16 @@ async function updateData() {
     // 自動追従
     map.setView([lat, lng], 17);
 
-    // 表示更新
+    // 上部表示
     document.getElementById("info").innerHTML = `
-      📍 Latest GPS Data<br>
+      🐻 Bear GPS Tracker<br>
       Latitude: ${lat}<br>
       Longitude: ${lng}<br>
       Time: ${jstTime}
     `;
 
   } catch (err) {
-    console.error("Update error:", err);
+    console.error(err);
     document.getElementById("info").innerHTML =
       "⚠️ Data fetch error (ThingSpeak)";
   }
@@ -113,7 +121,7 @@ async function updateData() {
 // 初回実行
 updateData();
 
-// 15秒ごと更新（ThingSpeak推奨）
+// 15秒更新
 setInterval(updateData, 15000);
 
 </script>
